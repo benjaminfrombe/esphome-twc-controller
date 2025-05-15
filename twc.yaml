@@ -28,6 +28,7 @@ uart:
 external_components:
   - source: github://benjaminfrombe/esphome-twc-controller
     components: [twc-controller]
+    refresh: 0s
 
 twc-controller:
   id: twc
