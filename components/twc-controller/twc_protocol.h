@@ -225,7 +225,8 @@ namespace esphome {
                 bool message_started_ = false;
                 uint8_t available_current_;
                 uint8_t max_current_;
-                uint8_t min_current_;
+    // skip SendData when SetCurrent(0) is called
+    bool skip_send_on_zero_current_{false};                uint8_t min_current_;
                 uint16_t stopstart_delay_;
                 bool current_changed_;
                 bool debug_;
