@@ -234,13 +234,31 @@ namespace esphome {
         }
 
         void TeslaController::SetCurrent(uint8_t current) {
-            if (available_current_ != current) {
-                ESP_LOGD(TAG, "Received current change message, new current %d\r\n", current);
+    // set skip flag when current==0
+    skip_send_on_zero_current_ = (current == 0);            if (available_current_ != current) {
+    // if SetCurrent(0) was called, force available_current_ to 0 and exit early
+    if (current == 0) {
+        available_current_ = 0;
+        return;
+    }                ESP_LOGD(TAG, "Received current change message, new current %d\r\n", current);
                 current_changed_ = true;
             }
 
             // If the available current is higher than the maximum for our charger,
             // clamp it to the maximum
+    for (uint8_t i = 0; i < 5; i++) {
+        this->SendPresence();
+        delay(100);
+    }
+    for (uint8_t i = 0; i < 5; i++) {
+        this->SendPresence2();
+        delay(100);
+    }
+   // Stuur 1 heartbeat naar elke gekende charger (zoals in Startup)
+    for (uint8_t i = 0; i < this->ChargersConnected(); i++) {
+        this->SendHeartbeat(this->chargers[i]->twcid);
+    delay(100);
+    }
             available_current_ = clamp(current, min_current_, max_current_);
             /*if (current <= MAX_CURRENT & current >= MIN_CURRENT) {
                 available_current_ = current;
@@ -763,7 +781,11 @@ namespace esphome {
             uint8_t outputBuffer[MAX_PACKET_LENGTH];
             uint8_t i;
             uint8_t j = 0;
-
+    // skip all communication if SetCurrent(0) called
+    if (skip_send_on_zero_current_) {
+        ESP_LOGD(TAG, "Skip SendData: last SetCurrent was 0");
+        return;
+    }
             if (length > MAX_PACKET_LENGTH) {
                 ESP_LOGD(TAG, "Error - packet larger than maximum allowable size!");
                 return;
