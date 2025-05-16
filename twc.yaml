@@ -19,8 +19,8 @@ api:
 
 uart:
   id: twc_uart
-  tx_pin: 5
-  rx_pin: 19
+  tx_pin: GPIO17
+  rx_pin: GPIO16
   baud_rate: 9600
   data_bits: 8
   parity: NONE
@@ -38,7 +38,7 @@ twc-controller:
   max_current: 32
   set_current: 6
   twc_id: 0xAB32
-  flow_control_pin: 18
+  flow_control_pin: GPIO4
   current:
     name: "Charging Current"
   max_allowable_current:
