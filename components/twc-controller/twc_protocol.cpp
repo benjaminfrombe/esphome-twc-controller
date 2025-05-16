@@ -243,9 +243,8 @@ namespace esphome {
     }                ESP_LOGD(TAG, "Received current change message, new current %d\r\n", current);
                 current_changed_ = true;
             }
+    // when setcurrent >0 redo handshake and send heartbeat
 
-            // If the available current is higher than the maximum for our charger,
-            // clamp it to the maximum
     for (uint8_t i = 0; i < 5; i++) {
         this->SendPresence();
         delay(100);
@@ -254,11 +253,14 @@ namespace esphome {
         this->SendPresence2();
         delay(100);
     }
-   // Stuur 1 heartbeat naar elke gekende charger (zoals in Startup)
+   
     for (uint8_t i = 0; i < this->ChargersConnected(); i++) {
         this->SendHeartbeat(this->chargers[i]->twcid);
     delay(100);
     }
+            // If the available current is higher than the maximum for our charger,
+            // clamp it to the maximum
+            
             available_current_ = clamp(current, min_current_, max_current_);
             /*if (current <= MAX_CURRENT & current >= MIN_CURRENT) {
                 available_current_ = current;
