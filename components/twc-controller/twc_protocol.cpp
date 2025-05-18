@@ -233,43 +233,39 @@ namespace esphome {
             SendCommand(GET_VIN_LAST, secondary_twcid);
         }
 
-        void TeslaController::SetCurrent(uint8_t current) {
-    // set skip flag when current==0
-    skip_send_on_zero_current_ = (current == 0);            if (available_current_ != current) {
-    // if SetCurrent(0) was called, force available_current_ to 0 and exit early
-    if (current == 0) {
-        available_current_ = 0;
-        return;
-    }                ESP_LOGD(TAG, "Received current change message, new current %d\r\n", current);
-                current_changed_ = true;
-            }
-    // when setcurrent >0 redo handshake and send heartbeat
+void TeslaController::SetCurrent(uint8_t current) {
+    // Check if the current has actually changed
+    if (available_current_ == current) {
+        return; // No change, exit immediately
+    }
 
-    for (uint8_t i = 0; i < 5; i++) {
-        this->SendPresence();
-        delay(100);
-    }
-    for (uint8_t i = 0; i < 5; i++) {
-        this->SendPresence2();
-        delay(100);
-    }
-   
-    for (uint8_t i = 0; i < this->ChargersConnected(); i++) {
-        this->SendHeartbeat(this->chargers[i]->twcid);
-    delay(100);
-    }
-            // If the available current is higher than the maximum for our charger,
-            // clamp it to the maximum
-            
-            available_current_ = clamp(current, min_current_, max_current_);
-            /*if (current <= MAX_CURRENT & current >= MIN_CURRENT) {
-                available_current_ = current;
-            } else if (current > MAX_CURRENT) {
-                available_current_ = MAX_CURRENT;
-            } else if (current < MIN_CURRENT) {
-                available_current_ = MIN_CURRENT;
-            }*/
+    // Only perform handshake if transitioning from 0 to non-zero
+    if (available_current_ == 0 && current > 0) {
+        for (uint8_t i = 0; i < 5; i++) {
+            this->SendPresence();
+            delay(100);
         }
+        for (uint8_t i = 0; i < 5; i++) {
+            this->SendPresence2();
+            delay(100);
+        }
+
+        for (uint8_t i = 0; i < this->ChargersConnected(); i++) {
+            this->SendHeartbeat(this->chargers[i]->twcid);
+            delay(100);
+        }
+    }
+
+    // Update current_changed_ to true only if current changed
+    ESP_LOGD(TAG, "Received current change message, new current %d\r\n", current);
+    current_changed_ = true;
+
+    // Clamp current to allowed range
+    available_current_ = clamp(current, min_current_, max_current_);
+
+    // Update skip_send_on_zero_current_ flag
+    skip_send_on_zero_current_ = (current == 0);
+}
 
         void TeslaController::SendPresence(bool presence2) {
         RESP_PACKET_T presence;
