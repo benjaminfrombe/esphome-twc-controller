@@ -237,18 +237,32 @@ namespace esphome {
             if (available_current_ != current) {
                 ESP_LOGD(TAG, "Received current change message, new current %d\r\n", current);
                 current_changed_ = true;
+
+                bool was_zero = (available_current_ == 0);
+
+                // Use the protocol's explicit charge commands on the zero
+                // boundary. The heartbeat keeps flowing in both cases (the
+                // link is never cut), so a stopped session can be resumed.
+                if (current == 0) {
+                    for (uint8_t i = 0; i < this->ChargersConnected(); i++) {
+                        for (uint8_t r = 0; r < 3; r++) {
+                            this->StopCharging(this->chargers[i]->twcid);
+                            delay(100);
+                        }
+                    }
+                } else if (was_zero) {
+                    for (uint8_t i = 0; i < this->ChargersConnected(); i++) {
+                        for (uint8_t r = 0; r < 3; r++) {
+                            this->StartCharging(this->chargers[i]->twcid);
+                            delay(100);
+                        }
+                    }
+                }
             }
 
-            // If the available current is higher than the maximum for our charger,
-            // clamp it to the maximum
-            available_current_ = clamp(current, min_current_, max_current_);
-            /*if (current <= MAX_CURRENT & current >= MIN_CURRENT) {
-                available_current_ = current;
-            } else if (current > MAX_CURRENT) {
-                available_current_ = MAX_CURRENT;
-            } else if (current < MIN_CURRENT) {
-                available_current_ = MIN_CURRENT;
-            }*/
+            // A current of 0 means "stop": let it pass through so the heartbeat
+            // advertises 0 A. Any other value is clamped to the charger range.
+            available_current_ = (current == 0) ? 0 : clamp(current, min_current_, max_current_);
         }
 
         void TeslaController::SendPresence(bool presence2) {
@@ -321,6 +335,20 @@ namespace esphome {
             }
             packet.checksum = CalculateChecksum((uint8_t*)&packet, sizeof(packet));
             SendData((uint8_t*)&packet, sizeof(packet));
+        }
+
+        // Protocol-native commands (0xFC range, no response from the secondary):
+        // ask the charger itself to start/stop the session. Distinct from
+        // simply advertising a 0 A current limit, which some vehicles keep
+        // drawing a minimum against.
+        void TeslaController::StopCharging(uint16_t twcid) {
+            ESP_LOGD(TAG, "Sending STOP_CHARGING (0xFCB2) to %04x", twcid);
+            SendCommand(STOP_CHARGING, twcid);
+        }
+
+        void TeslaController::StartCharging(uint16_t twcid) {
+            ESP_LOGD(TAG, "Sending START_CHARGING (0xFCB1) to %04x", twcid);
+            SendCommand(START_CHARGING, twcid);
         }
 
         uint8_t TeslaController::CalculateChecksum(uint8_t *buffer, size_t length) {
