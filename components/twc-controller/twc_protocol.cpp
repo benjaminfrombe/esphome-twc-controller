@@ -88,6 +88,14 @@ namespace esphome {
                         twc->SendHeartbeat(twc->chargers[i]->twcid);
                         if (twc->current_changed_ == true) { twc->current_changed_ = false; };
 
+                        // Re-assert STOP while in stop-state: if we want 0 A but
+                        // the vehicle is still drawing (e.g. it drifted back up
+                        // after fast cycling, with no fresh 0-transition), keep
+                        // sending STOP_CHARGING so the session is reliably halted.
+                        if (twc->available_current_ == 0 && twc->IsCharging()) {
+                            twc->StopCharging(twc->chargers[i]->twcid);
+                        }
+
                         vTaskDelay(500+random(50,100)/portTICK_PERIOD_MS);
 
                         switch (commandNumber) {
