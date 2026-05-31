@@ -233,39 +233,44 @@ namespace esphome {
             SendCommand(GET_VIN_LAST, secondary_twcid);
         }
 
-void TeslaController::SetCurrent(uint8_t current) {
-    // Check if the current has actually changed
-    if (available_current_ == current) {
-        return; // No change, exit immediately
-    }
+        void TeslaController::SetCurrent(uint8_t current) {
+            if (available_current_ != current) {
+                ESP_LOGD(TAG, "Received current change message, new current %d\r\n", current);
+                current_changed_ = true;
 
-    // Only perform handshake if transitioning from 0 to non-zero
-    if (available_current_ == 0 && current > 0) {
-        for (uint8_t i = 0; i < 5; i++) {
-            this->SendPresence();
-            delay(100);
+                bool was_zero = (available_current_ == 0);
+
+                // Protocol-native stop/start on the zero boundary. The
+                // heartbeat keeps flowing in both cases (no comms cut), so the
+                // charger link stays alive and a stopped session can be resumed.
+                if (current == 0) {
+                    for (uint8_t i = 0; i < this->ChargersConnected(); i++) {
+                        for (uint8_t r = 0; r < 3; r++) {
+                            this->StopCharging(this->chargers[i]->twcid);
+                            delay(100);
+                        }
+                    }
+                } else if (was_zero) {
+                    for (uint8_t i = 0; i < this->ChargersConnected(); i++) {
+                        for (uint8_t r = 0; r < 3; r++) {
+                            this->StartCharging(this->chargers[i]->twcid);
+                            delay(100);
+                        }
+                    }
+                }
+            }
+
+            // If the available current is higher than the maximum for our charger,
+            // clamp it to the maximum
+            available_current_ = clamp(current, min_current_, max_current_);
+            /*if (current <= MAX_CURRENT & current >= MIN_CURRENT) {
+                available_current_ = current;
+            } else if (current > MAX_CURRENT) {
+                available_current_ = MAX_CURRENT;
+            } else if (current < MIN_CURRENT) {
+                available_current_ = MIN_CURRENT;
+            }*/
         }
-        for (uint8_t i = 0; i < 5; i++) {
-            this->SendPresence2();
-            delay(100);
-        }
-
-        for (uint8_t i = 0; i < this->ChargersConnected(); i++) {
-            this->SendHeartbeat(this->chargers[i]->twcid);
-            delay(100);
-        }
-    }
-
-    // Update current_changed_ to true only if current changed
-    ESP_LOGD(TAG, "Received current change message, new current %d\r\n", current);
-    current_changed_ = true;
-
-    // Clamp current to allowed range
-    available_current_ = clamp(current, min_current_, max_current_);
-
-    // Update skip_send_on_zero_current_ flag
-    skip_send_on_zero_current_ = (current == 0);
-}
 
         void TeslaController::SendPresence(bool presence2) {
         RESP_PACKET_T presence;
@@ -337,6 +342,19 @@ void TeslaController::SetCurrent(uint8_t current) {
             }
             packet.checksum = CalculateChecksum((uint8_t*)&packet, sizeof(packet));
             SendData((uint8_t*)&packet, sizeof(packet));
+        }
+
+        // Protocol-native commands (0xFC range, no response from secondary):
+        // ask the charger itself to start/stop the session. Distinct from
+        // setting the current limit to 0.
+        void TeslaController::StopCharging(uint16_t twcid) {
+            ESP_LOGD(TAG, "Sending STOP_CHARGING (0xFCB2) to %04x", twcid);
+            SendCommand(STOP_CHARGING, twcid);
+        }
+
+        void TeslaController::StartCharging(uint16_t twcid) {
+            ESP_LOGD(TAG, "Sending START_CHARGING (0xFCB1) to %04x", twcid);
+            SendCommand(START_CHARGING, twcid);
         }
 
         uint8_t TeslaController::CalculateChecksum(uint8_t *buffer, size_t length) {
@@ -779,11 +797,7 @@ void TeslaController::SetCurrent(uint8_t current) {
             uint8_t outputBuffer[MAX_PACKET_LENGTH];
             uint8_t i;
             uint8_t j = 0;
-    // skip all communication if SetCurrent(0) called
-    if (skip_send_on_zero_current_) {
-        ESP_LOGD(TAG, "Skip SendData: last SetCurrent was 0");
-        return;
-    }
+
             if (length > MAX_PACKET_LENGTH) {
                 ESP_LOGD(TAG, "Error - packet larger than maximum allowable size!");
                 return;
