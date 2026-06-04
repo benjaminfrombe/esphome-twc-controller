@@ -318,16 +318,19 @@ namespace esphome {
             heartbeat.src_twcid = twcid_;
             heartbeat.dst_twcid = secondary_twcid;
 
-            if (current_changed_) {
-                uint16_t encodedMax = available_current_ * 100;
-                heartbeat.state = 0x09; // Limit power to the value from the next two bytes
-
-                // current * 100 (to get it to a whole number)
-                heartbeat.max_current = htons(encodedMax);
-            } else {
-                heartbeat.state = 0x00;
-                heartbeat.max_current = 0x00;
-            }
+            // Always advertise the current limit, not just on the heartbeat
+            // immediately after a change. The original "send 0x09 once, then
+            // 0x00" behaviour meant the vehicle only learned a new limit on the
+            // single heartbeat following a SetCurrent flank. If that heartbeat
+            // landed before the car finished its cold-start handshake, the car
+            // latched its 6A start floor and never ramped to the higher limit
+            // (no fresh flank => no further 0x09 advertisement). Re-asserting
+            // the limit continuously is the ramp-up analogue of the STOP
+            // re-assert below, and matches how real Tesla primaries behave.
+            uint16_t encodedMax = available_current_ * 100;
+            heartbeat.state = 0x09; // Limit power to the value from the next two bytes
+            heartbeat.max_current = htons(encodedMax); // current * 100 (whole number)
+            if (current_changed_) { current_changed_ = false; }
 
             heartbeat.plug_inserted = 0x00;
 
